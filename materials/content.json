@@ -1,0 +1,65 @@
+{
+  "page": {
+    "title": "Two-Event Time Synchronization",
+    "description": "Aligning golf swing recordings with two shared events for consistent multi-view 3D reconstruction.",
+    "eyebrow": "Computer vision \u00b7 Multi-view synchronization",
+    "navigationLabel": "Project sections",
+    "navigationToggle": "Toggle section navigation",
+    "mainPage": {
+      "label": "Return to main page",
+      "url": "https://youminghu0930-public.github.io/golf-swing-analysis-poc/#projects"
+    },
+    "footer": "Two-event time synchronization",
+    "role": "My role: I implemented two-event frame mapping and connected synchronized multi-view recordings to visual inspection of 3D golf swing reconstruction."
+  },
+  "sections": [
+    {
+      "id": "abstract",
+      "title": "Abstract",
+      "paragraphs": [
+        "Multi-view 3D reconstruction needs observations of the same moment. Golf swing recordings can start at different times and run at different frame rates, so matching frame indices alone can pair different poses. Two shared events establish an offset and a constant time-scale ratio for each view. The saved mapping aligns both events, trims unmatched heads and tails, and samples the nearest raw frame for each synchronized step. The comparisons below show the supplied reconstructions before and after synchronization."
+      ]
+    },
+    {
+      "id": "introduction",
+      "title": "Introduction",
+      "paragraphs": [
+        "Independent recordings rarely share the same start, end, or frame rate. During a fast golf swing, even a small temporal mismatch can make triangulated joints disagree with the observed motion.",
+        "One event corrects an offset but does not determine a speed ratio. Two corresponding events provide both constraints, allowing each recording to be mapped onto one common timeline."
+      ]
+    },
+    {
+      "id": "method",
+      "title": "Method",
+      "paragraphs": [
+        "Annotate the same two events in every view, with the first event preceding the second. Choose the highest-frame-rate recording as the reference timeline.",
+        "For reference frame k, map to view i with x\u1d62(k) = e\u1d62\u2081 + (k \u2212 e\u1d63\u2081)(e\u1d62\u2082 \u2212 e\u1d62\u2081)/(e\u1d63\u2082 \u2212 e\u1d63\u2081). Both labeled events map exactly to their annotated frame indices.",
+        "Intersect the continuous valid ranges of all views, then take the ceiling of the common start and the floor of the common end. Sample every legal reference frame and round each mapped position to the nearest frame; exact half-frame ties select the later frame. The reference implementation uses integer fractions to avoid accumulated rounding error.",
+        "Save annotations in meta and equal-length raw-frame arrays in mapping inside each swing\u2019s sync.json. The viewer reads this saved mapping directly, including repeated or skipped frames, and applies it to both video and 2D detection overlays."
+      ]
+    },
+    {
+      "id": "results",
+      "title": "Results",
+      "paragraphs": [
+        "The interactive viewer shows only the after-synchronization reconstruction. Face-on and down-the-line views use their own raw-frame mapping at each common timeline step. Camera views and the free 3D view retain the template\u2019s inspection controls.",
+        "The snapshot carousel compares before and after reconstructions. Each pair uses a shared loop duration with an individual effective playback speed, so unequal-length sequences finish and restart together. This duration-normalized comparison is separate from the event-based alignment used in the video viewer."
+      ]
+    },
+    {
+      "id": "discussion",
+      "title": "Discussion",
+      "paragraphs": [
+        "Two events assume each recording differs by a constant offset and a constant time scale. This model cannot correct irregular clock changes or inaccurate event labels. Frame-level annotation also limits the temporal precision of the result.",
+        "Synchronization addresses temporal correspondence; it does not remove errors in 2D detections, camera estimation, or triangulation. The supplied before/after examples support visual inspection; no quantitative accuracy improvement is claimed here."
+      ]
+    },
+    {
+      "id": "conclusion",
+      "title": "Conclusion",
+      "paragraphs": [
+        "Two shared events define a reproducible frame mapping across independent recordings. Trimming to a common legal range and preserving exact event correspondence provides a consistent timeline for inspecting multi-view golf swing reconstruction."
+      ]
+    }
+  ]
+}
