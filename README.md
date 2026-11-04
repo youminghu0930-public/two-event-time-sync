@@ -68,3 +68,7 @@ The build copies only the assets required by the static page to `dist/`, includi
 Work on a feature branch, run tests and the static build, then review and commit source changes with the materials needed to reproduce them. Generated previews, `dist/`, and OS files are ignored.
 
 `.github/workflows/pages.yml` (or the retained workflow filename) checks the project and builds a GitHub Pages artifact on pushes to `main`/`master`, with a manual dispatch option. Enable GitHub Pages with **GitHub Actions** as its source in the repository settings. The workflow installs FFmpeg before preparing videos. No remote is configured or pushed by setup.
+
+## Hero banner
+
+The title banner uses the reconstruction template’s face-on video and 3D composition. Configure `page.banner` in `materials/content.json` (`enabled`, `swing`, `label`, and playback `fps`). Club history includes every valid detected frame, skipping missing detections rather than sampling at fixed time intervals. It uses the after reconstruction and the selected swing’s saved sync mapping, loops over the mapped interval, and pauses when offscreen or when the page is hidden.

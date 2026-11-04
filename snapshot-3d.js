@@ -252,9 +252,9 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
     }
   });
   // Shaft sampling is independent of the fade style: snapshots include every
-  // valid detected frame while video scenes retain their time sampling.
+  // valid detected frame (as does the banner); video scenes retain time sampling.
   const clubHistory=[];
-  const historyStride=(snapshotHistory||detectionShaftHistory)?1:Math.max(1,Math.round(fps*.1));
+  const historyStride=(snapshotHistory||detectionShaftHistory||bannerMode)?1:Math.max(1,Math.round(fps*.1));
   const historyWindow=Math.max(1,(end-start+1)*historyFraction);
   const clubSpeeds=speeds.get('golf_club_head') || speeds.get(joints[0]);
   for(let f=start;f<=end;f+=historyStride){

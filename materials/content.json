@@ -11,7 +11,13 @@
     },
     "footer": "Two-event time synchronization",
     "role": "My role: I developed an exact two-event synchronization solution that improved reconstruction robustness by 40% on previously problematic videos, and built the integrated annotation tool that made manual synchronization 5× faster.",
-    "snapshotGestureHint": "Drag to rotate · Right-drag or move two fingers to pan · Scroll or pinch to zoom. Both views move together."
+    "snapshotGestureHint": "Drag to rotate · Right-drag or move two fingers to pan · Scroll or pinch to zoom. Both views move together.",
+    "banner": {
+      "enabled": true,
+      "swing": "05",
+      "label": "Face-on synchronized golf swing reconstruction preview",
+      "fps": 30
+    }
   },
   "sections": [
     {
