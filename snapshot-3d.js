@@ -1,3 +1,4 @@
+import {faceOnFraming} from './snapshot-framing.js';
 import {parseSnapshotEntries} from './snapshot-config.js';
 import * as THREE from './vendor/three/three.module.js';
 import {interpolateRotation,constrainCameraAboveGround} from './camera-flight.js';
@@ -5,7 +6,7 @@ const names = ['nose','atlas','top_head','left_ear','right_ear','left_shoulder',
 const edges = [[0,1],[0,2],[0,3],[0,4],[5,6],[5,7],[7,9],[6,8],[8,10],[5,11],[6,12],[11,12],[11,13],[13,15],[12,14],[14,16],[17,19],[19,20]];
 const valid = p => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite);
 async function json(url) { const response = await fetch(url); if (!response.ok) throw new Error(`${url}: ${response.status}`); return response.json(); }
-export async function mountSnapshots(root, { showCameras = false } = {}) {
+export async function mountSnapshots(root, { showCameras = false, gestureHint } = {}) {
   const response=await fetch('materials/data/snapshot.json',{cache:'no-store'});
   if(!response.ok)throw new Error(`Snapshot configuration: ${response.status}`);
   const entries=parseSnapshotEntries(await response.text());
@@ -45,6 +46,8 @@ export async function mountSnapshots(root, { showCameras = false } = {}) {
   for (const [id, entry] of entries) {
     const card=document.createElement('article');card.className='pose-snapshot snapshot-card';
     card.setAttribute('aria-roledescription','slide');card.setAttribute('aria-label',`Swing ${id}`);
+    const header=document.createElement('div');header.className='snapshot-card-header';
+    const heading=document.createElement('h4');heading.textContent=`Swing ${id}`;header.append(heading);card.append(header);
     wheel.append(card);cards.push(card);carouselResize.observe(card);
     const button=document.createElement('button');button.type='button';button.setAttribute('aria-label',`Show swing ${id}`);button.append(document.createElement('span'));
     const position=cards.length-1;button.onclick=()=>{let delta=(position-((target%cards.length)+cards.length)%cards.length+cards.length)%cards.length;if(delta>cards.length/2)delta-=cards.length;select(target+delta);};dots.append(button);buttons.push(button);
@@ -54,7 +57,11 @@ export async function mountSnapshots(root, { showCameras = false } = {}) {
     button.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${step<0?'M15 5l-7 7 7 7':'M9 5l7 7-7 7'}"/></svg>`;
     button.onclick=()=>select(target+step);button.hidden=entries.length<2;shell.append(button);
   }
-  root.append(shell,dots);select(0);
+  root.append(shell,dots);
+  if(gestureHint){
+    const hint=document.createElement('p');hint.className='snapshot-hint snapshot-gesture-hint';hint.textContent=gestureHint;root.append(hint);
+  }
+  select(0);
   await Promise.all(entries.map(async ([id,entry],i)=>{
     try {
       const duration=entry.duration,stay=entry.stay??0;
@@ -62,13 +69,25 @@ export async function mountSnapshots(root, { showCameras = false } = {}) {
       if(!Number.isFinite(stay)||stay<0)throw new Error('Snapshot stay must be a nonnegative number of seconds');
       const pair=document.createElement('div');pair.className='snapshot-comparison';cards[i].append(pair);
       const records=await Promise.all(['before','after'].map(variant=>json(`materials/data/3d_results/${variant}/${encodeURIComponent(id)}.json`)));
+      const framing=faceOnFraming(await json(`materials/data/2d_detections/${encodeURIComponent(id)}/face-on.json`));
       const counts=records.map(record=>record.reconstruction.length);
       if(counts.some(count=>!Number.isInteger(count)||count<1))throw new Error('Snapshot sequences must contain frames');
+      const linkedControllers=[];
+      const shareInteraction=state=>linkedControllers.forEach(controller=>controller.setInteraction(state));
       const controllers=await Promise.all(['before','after'].map(async (variant,j)=>{
-        const panel=document.createElement('div');panel.className='snapshot-comparison-panel';pair.append(panel);
-        const label=document.createElement('h4');label.textContent=variant==='before'?'Before synchronization':'After synchronization';panel.append(label);
-        return mountPoseScene(panel,id,{joints:entry.joints,range:[0,counts[j]-1],fps:counts[j]/duration},{showCameras,autoPlay:false,resultVariant:variant,detectionShaftHistory:true});
+        const panel=document.createElement('div');panel.className='snapshot-comparison-panel comparison-panel';panel.dataset.model=variant==='after'?'golf':'general';pair.append(panel);
+        const label=document.createElement('div');label.className='panel-heading';
+        const text=document.createElement('strong');text.textContent=variant==='before'?'Before synchronization':'After synchronization';label.append(text);panel.append(label);
+        return mountPoseScene(panel,id,{joints:entry.joints,range:[0,counts[j]-1],fps:counts[j]/duration},{showCameras,autoPlay:false,resultVariant:variant,detectionShaftHistory:true,showTitle:false,centerOnBody:true,faceOnCrop:framing,onInteraction:shareInteraction,poseColor:variant==='before'?'#ffce69':'#63f5b4'});
       }));
+      // Fit the original ground squares in a shared default image crop.
+      const retreat=Math.max(...controllers.map(controller=>controller.groundRetreat()));
+      const bounds=controllers.map(controller=>controller.fitGround(retreat));
+      const left=Math.min(...bounds.map(b=>b.left)),right=Math.max(...bounds.map(b=>b.right));
+      const top=Math.min(...bounds.map(b=>b.top)),bottom=Math.max(...bounds.map(b=>b.bottom));
+      Object.assign(framing,{x:(left+right)/2,y:(top+bottom)/2,width:(right-left)*1.12,height:(bottom-top)*1.12});
+      controllers.forEach(controller=>controller.setFrame(0));
+      linkedControllers.push(...controllers);
       let elapsed=0,previous;
       const observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;});let visible=false;observer.observe(cards[i]);
       function tick(now){
@@ -83,7 +102,7 @@ export async function mountSnapshots(root, { showCameras = false } = {}) {
   }));
 
 }
-export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, resultVariant = 'after', snapshotHistory = false, detectionShaftHistory = false } = {}) {
+export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, resultVariant = 'after', snapshotHistory = false, detectionShaftHistory = false, showTitle = true, centerOnBody = false, poseColor, faceOnCrop, onInteraction } = {}) {
   const {reconstruction: frames, calibration} = await json(`materials/data/3d_results/${resultVariant}/${encodeURIComponent(id)}.json`);
   const configuredRange = entry.range ?? entry.ranage;
   const range = Array.isArray(configuredRange)
@@ -97,13 +116,14 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   let yaw = 0, pitch = 0, zoom = 1, distanceScale = 1;
   const heading = document.createElement('h4'); heading.textContent = `Swing ${id}`; heading.className='media-item-title';
   const canvas = document.createElement('canvas'); canvas.setAttribute('aria-label', `Rotatable 3D pose for swing ${id}`); canvas.setAttribute('role','img');
-  card.append(heading,canvas);
+  if(showTitle)card.append(heading);
+  card.append(canvas);
   const points = frames.slice(start,end+1).flat().filter(valid);
   if (!points.length) throw new Error('No valid 3D points');
   const min = [0,1,2].map(axis => Math.min(...points.map(p=>p[axis])));
   const max = [0,1,2].map(axis => Math.max(...points.map(p=>p[axis])));
   const center = min.map((v,i)=>(v+max[i])/2);
-  const radius = Math.max(...points.map(p=>Math.hypot(...p.map((v,i)=>v-center[i])))) || 1;
+  let radius = Math.max(...points.map(p=>Math.hypot(...p.map((v,i)=>v-center[i])))) || 1;
   const median = values => { const sorted = values.sort((a,b)=>a-b); return sorted[Math.floor(sorted.length/2)]; };
   const selectedFrames = frames.slice(start,end+1);
   const groundY = median(selectedFrames.map(pose => Math.max(...[pose[15],pose[16]].filter(valid).map(p=>p[1]))).filter(Number.isFinite));
@@ -115,6 +135,13 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   const bodyCenters = selectedFrames.filter(pose=>valid(pose[11])&&valid(pose[12])).map(pose=>pose[11].map((v,i)=>(v+pose[12][i])/2));
   const groundX = bodyCenters.length ? median(bodyCenters.map(p=>p[0])) : center[0];
   const groundZ = bodyCenters.length ? median(bodyCenters.map(p=>p[2])) : center[2];
+  if(centerOnBody){
+    // Center the golfer, rather than the club's asymmetric motion bounds.
+    center[0]=groundX;center[2]=groundZ;
+    const headHeights=selectedFrames.map(pose=>pose[2]).filter(valid).map(p=>p[1]);
+    if(headHeights.length)center[1]=(groundY+median(headHeights))/2;
+    radius=Math.max(...points.map(p=>Math.hypot(...p.map((v,i)=>v-center[i]))))||1;
+  }
   const extent = Math.max(...points.map(p=>Math.max(Math.abs(p[0]-groundX),Math.abs(p[2]-groundZ)))) || gridStep;
   // Rotate camera coordinates into a right-handed rendering space:
   // source +X is right, source -Y is up, and source +Z points into the screen.
@@ -140,7 +167,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   scene.add(light);
   const fill = new THREE.DirectionalLight('#dceaff',1); fill.position.set(3,1,-3); scene.add(fill);
   const material = color => new THREE.MeshStandardMaterial({color,roughness:.38,metalness:.08});
-  const boneMaterial = material('#63f5b4');
+  const boneMaterial = material(poseColor||'#63f5b4');
   if(bannerMode)boneMaterial.transparent=true;
   const jointMaterials = {left:material('#3b82f6'),right:material('#ef4444'),center:boneMaterial};
   if(bannerMode)Object.values(jointMaterials).forEach(surface=>{surface.transparent=true;});
@@ -157,6 +184,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     mesh.castShadow = mesh.receiveShadow = true;if(bannerMode)mesh.renderOrder=3; scene.add(mesh); return mesh;
   });
   // Prebuild timestamped solid trail segments; reveal only samples reached by playback.
+  const historyFraction=detectionShaftHistory ? .8 : .3;
   const trails=[];
   const trailCylinder=new THREE.CylinderGeometry(1,1,1,8);
   const trailSphere=new THREE.SphereGeometry(.006,8,6);
@@ -202,7 +230,7 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
         : 'float age = playbackFrame - trailAge;\nif (age < 0.0 || age >= historyFrames) discard;\ndiffuseColor.a *= 1.0 - age / historyFrames;';
       shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n'+fade);
       shader.uniforms.playbackFrame={value:frame};
-      shader.uniforms.historyFrames={value:Math.max(1,(end-start+1)*.3)};
+      shader.uniforms.historyFrames={value:Math.max(1,(end-start+1)*historyFraction)};
       trailMaterial.userData.shader=shader;
     };
     for(const [items,geometry,isSegment] of [[segments,trailCylinder,true],[samples,trailSphere,false]]) {
@@ -227,7 +255,7 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
   // valid detected frame while video scenes retain their time sampling.
   const clubHistory=[];
   const historyStride=(snapshotHistory||detectionShaftHistory)?1:Math.max(1,Math.round(fps*.1));
-  const historyWindow=Math.max(1,(end-start+1)*.3);
+  const historyWindow=Math.max(1,(end-start+1)*historyFraction);
   const clubSpeeds=speeds.get('golf_club_head') || speeds.get(joints[0]);
   for(let f=start;f<=end;f+=historyStride){
     const segments=[];
@@ -488,11 +516,20 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
     place(viewerRing,viewerMarker,viewerConnection,camera.position);
     viewerCross.position.copy(viewerMarker.position);
   }
-  const enablePan=!bannerMode&&Object.keys(cameraVideos).length>0;
+  if(faceOnCrop){
+    const cal=calibration?.['face-on'];
+    if(!cal?.intrinsic||!cal?.R||!valid(cal.t))throw new Error('Missing face-on camera calibration');
+    const direction=v=>{const p=cal.R.map(row=>row.reduce((sum,n,j)=>sum+n*v[j],0));return new THREE.Vector3(p[0],-p[1],-p[2]);};
+    const rotation=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(direction([1,0,0]),direction([0,-1,0]),direction([0,0,-1])));
+    cameraPresets.set('face-on',{position:vector(cal.t),rotation,K:cal.intrinsic});
+    selectedView='face-on';
+  }
+  const enablePan=!bannerMode&&(Boolean(faceOnCrop)||Object.keys(cameraVideos).length>0);
   let panX=0,panY=0;
   // Frame the pose and its motion, independently of camera/plane extents.
   distanceScale=1;
   if(Object.keys(cameraVideos).length){yaw=-.65;pitch=.3;}
+  let snapshotRetreat=0;
   let renderWidth=0,renderHeight=0;
   function draw() {
     const w=canvas.clientWidth,h=canvas.clientHeight;
@@ -521,6 +558,7 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
       const orbit=preset.rotation.clone().multiply(localOrbit).multiply(preset.rotation.clone().invert());
       camera.position.copy(preset.position).multiplyScalar(distanceScale).applyQuaternion(orbit);
       camera.quaternion.copy(orbit).multiply(preset.rotation);
+      if(faceOnCrop)camera.position.add(new THREE.Vector3(0,0,snapshotRetreat).applyQuaternion(camera.quaternion));
       camera.fov=THREE.MathUtils.radToDeg(2*Math.atan((bannerMode?width/(2*preset.K[0][0]*camera.aspect):Math.max(height/(2*preset.K[1][1]),width/(2*preset.K[0][0]*camera.aspect)))));
     }
     if(cameraFlight){
@@ -531,8 +569,22 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
       camera.zoom=THREE.MathUtils.lerp(cameraFlight.zoom,camera.zoom,t);
       if(enablePan)camera.setViewOffset(w,h,THREE.MathUtils.lerp(cameraFlight.offsetX,-panX,t),THREE.MathUtils.lerp(cameraFlight.offsetY,-panY,t),w,h);
     }
-    if(!bannerMode)constrainCameraAboveGround(camera,minimumCameraY);
+    if(!bannerMode&&!faceOnCrop)constrainCameraAboveGround(camera,minimumCameraY);
     camera.updateProjectionMatrix();
+    if(faceOnCrop&&selectedView==='face-on'){
+      // Use the same pixel crop for both calibrated cameras. Intrinsics supply
+      // each reconstruction's focal length; no independent 3D auto-fit is used.
+      const K=preset.K,n=camera.near;
+      const cropWidth=Math.max(faceOnCrop.width,faceOnCrop.height*camera.aspect)/zoom;
+      const cropHeight=cropWidth/camera.aspect;
+      const cropX=faceOnCrop.x-panX/w*cropWidth,cropY=faceOnCrop.y-panY/h*cropHeight;
+      const left=(cropX-cropWidth/2-K[0][2])*n/K[0][0];
+      const right=(cropX+cropWidth/2-K[0][2])*n/K[0][0];
+      const top=-(cropY-cropHeight/2-K[1][2])*n/K[1][1];
+      const bottom=-(cropY+cropHeight/2-K[1][2])*n/K[1][1];
+      camera.projectionMatrix.makePerspective(left,right,top,bottom,n,camera.far);
+      camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+    }
     updateDistanceGuides();
     const belowGround=camera.position.y<floor.position.y+.0125;
     floor.material.opacity=belowGround ? .3 : 1;
@@ -619,6 +671,7 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
     canvas.dataset.frame=String(frame);
     renderer.render(scene,camera);
   }
+  const publishInteraction=()=>onInteraction?.({zoom,yaw,pitch,presetYaw,presetPitch,panX:panX/Math.max(1,canvas.clientWidth),panY:panY/Math.max(1,canvas.clientHeight)});
   const pointers=new Map();
   const clampZoom=value=>Math.max(.4,Math.min(4,value));
   const pinchDistance=()=>{const [a,b]=[...pointers.values()];return Math.hypot(a.x-b.x,a.y-b.y);};
@@ -640,9 +693,9 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
     else if(pointers.size===1){
       if(enablePan&&previous.button===2){panX+=dx;panY+=dy;}
       else if(selectedView==='free-view'){yaw-=dx*.01;pitch=Math.max(-1.4,Math.min(1.4,pitch+dy*.01));}
-      else{const sensitivity=.0008/Math.max(1,zoom);presetYaw-=dx*sensitivity;presetPitch=Math.max(-1.4,Math.min(1.4,presetPitch-dy*sensitivity));}
+      else{const sensitivity=faceOnCrop ? .01 : .0008/Math.max(1,zoom);presetYaw-=dx*sensitivity;presetPitch=Math.max(-1.4,Math.min(1.4,presetPitch-dy*sensitivity));}
     }
-    draw();
+    draw();publishInteraction();
   };
   if(enablePan)canvas.addEventListener('contextmenu',e=>e.preventDefault());
   const release=e=>pointers.delete(e.pointerId);
@@ -651,11 +704,30 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
     e.preventDefault();
     if(cameraFlight)return;
     // Trackpad pinch arrives as a Ctrl+wheel gesture in supporting browsers.
-    zoom=clampZoom(zoom*Math.exp(-e.deltaY*(e.ctrlKey ? .01 : .001)));draw();
+    zoom=clampZoom(zoom*Math.exp(-e.deltaY*(e.ctrlKey ? .01 : .001)));draw();publishInteraction();
   },{passive:false});
   const resizeObserver=new ResizeObserver(draw);resizeObserver.observe(canvas); draw();
   let animationHandle,disposed=false,playbackEnabled=true;
+  const groundCorners=()=>[-1,1].flatMap(x=>[-1,1].map(z=>new THREE.Vector3(floor.position.x+x*floorSize/2,floor.position.y-.0125,floor.position.z+z*floorSize/2)));
   const controller={
+    groundRetreat(){
+      const preset=cameraPresets.get('face-on'),inverse=preset.rotation.clone().invert();
+      return Math.max(0,...groundCorners().map(p=>p.sub(preset.position).applyQuaternion(inverse).z+Math.max(1,floorSize)));
+    },
+    fitGround(retreat){
+      snapshotRetreat=retreat;
+      const preset=cameraPresets.get('face-on'),K=preset.K,inverse=preset.rotation.clone().invert();
+      const eye=preset.position.clone().add(new THREE.Vector3(0,0,retreat).applyQuaternion(preset.rotation));
+      const samples=groundCorners();
+      for(const pose of selectedFrames)for(const point of pose.slice(0,17))if(valid(point))samples.push(vector(point));
+      const pixels=samples.map(p=>p.sub(eye).applyQuaternion(inverse)).filter(p=>p.z<-.001).map(p=>[K[0][2]-K[0][0]*p.x/p.z,K[1][2]+K[1][1]*p.y/p.z]);
+      return {left:Math.min(...pixels.map(p=>p[0])),right:Math.max(...pixels.map(p=>p[0])),top:Math.min(...pixels.map(p=>p[1])),bottom:Math.max(...pixels.map(p=>p[1]))};
+    },
+    setInteraction(state){
+      ({zoom,yaw,pitch,presetYaw,presetPitch}=state);
+      panX=state.panX*canvas.clientWidth;panY=state.panY*canvas.clientHeight;
+      draw();
+    },
     setView(value,{animate=true}={}){
       const next=cameraPresets.has(value)?value:'free-view';
       const recenter=next===selectedView;

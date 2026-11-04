@@ -1,11 +1,4 @@
 {
-  "00": {
-    "duration": 3,
-    "stay": 0.5,
-    "joints": [
-      "golf_club_head"
-    ]
-  },
   "03": {
     "duration": 3,
     "stay": 0.5,

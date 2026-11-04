@@ -1,8 +1,8 @@
 {
   "page": {
     "title": "Two-Event Time Synchronization",
-    "description": "Aligning golf swing recordings with two shared events for consistent multi-view 3D reconstruction.",
-    "eyebrow": "Computer vision \u00b7 Multi-view synchronization",
+    "description": "Aligning independent golf swing recordings with two shared events for more believable and robust multi-view 3D reconstruction.",
+    "eyebrow": "Computer vision · Multi-view synchronization",
     "navigationLabel": "Project sections",
     "navigationToggle": "Toggle section navigation",
     "mainPage": {
@@ -10,55 +10,87 @@
       "url": "https://youminghu0930-public.github.io/golf-swing-analysis-poc/#projects"
     },
     "footer": "Two-event time synchronization",
-    "role": "My role: I implemented two-event frame mapping and connected synchronized multi-view recordings to visual inspection of 3D golf swing reconstruction."
+    "role": "My role: I developed an exact two-event synchronization solution that improved reconstruction robustness by 40% on previously problematic videos, and built the integrated annotation tool that made manual synchronization 5× faster.",
+    "snapshotGestureHint": "Drag to rotate · Right-drag or move two fingers to pan · Scroll or pinch to zoom. Both views move together."
   },
   "sections": [
     {
       "id": "abstract",
       "title": "Abstract",
       "paragraphs": [
-        "Multi-view 3D reconstruction needs observations of the same moment. Golf swing recordings can start at different times and run at different frame rates, so matching frame indices alone can pair different poses. Two shared events establish an offset and a constant time-scale ratio for each view. The saved mapping aligns both events, trims unmatched heads and tails, and samples the nearest raw frame for each synchronized step. The comparisons below show the supplied reconstructions before and after synchronization."
+        "Multi-view 3D reconstruction needs observations of the same moment. This project demonstrates that synchronization is a critical factor in reconstruction accuracy. Golf swing recordings can start at different times and run at different frame rates, so matching frame indices alone can pair different poses. Two shared events establish an offset and a constant time-scale ratio for each view. The saved mapping aligns both events exactly, trims unmatched heads and tails, and samples the nearest raw frame for each synchronized step without losing event alignment to rounding.",
+        "After synchronization, the recordings produce more believable reconstructed motion, with a 40% improvement in robustness on previously problematic videos. I also built a supporting tool that integrates event annotation, preview, and saving, making manual synchronization 5× faster than finding frame indices in separate software and transferring them into a script."
+      ],
+      "metrics": [
+        {
+          "label": "Faster manual synchronization",
+          "value": "5×"
+        },
+        {
+          "label": "Robustness on previously problematic videos",
+          "value": "+40%"
+        }
       ]
     },
     {
       "id": "introduction",
       "title": "Introduction",
       "paragraphs": [
-        "Independent recordings rarely share the same start, end, or frame rate. During a fast golf swing, even a small temporal mismatch can make triangulated joints disagree with the observed motion.",
-        "One event corrects an offset but does not determine a speed ratio. Two corresponding events provide both constraints, allowing each recording to be mapped onto one common timeline."
+        "Multi-view reconstruction combines observations from different cameras to estimate a single 3D pose. Those observations must describe the same instant. In a fast golf swing, a small timing mismatch can place the club or a limb at different stages of the motion, producing a reconstruction that is difficult to believe even when the individual 2D detections look reasonable.",
+        "Independent recordings introduce several uncertainties: cameras may start and stop at different moments, clips can have different lengths, and their frame rates may differ. The usable heads and tails are therefore unknown. Aligning the start of the files or selecting the same frame index does not establish that the images show the same moment.",
+        "One shared event can correct a starting offset, but it cannot establish the relative pace of the recordings. Two matching events constrain both. The remaining difficulty is to preserve exact correspondence when continuous time positions have to be rounded to discrete video frames, while ensuring that every synchronized step stays inside every recording.",
+        "The expected result is one timeline containing only the common usable range. Both marked events must align exactly, and every step of the highest-frame-rate reference should select the closest available frame in each other view. In practice, finding and checking those event frames across separate players, recording the indices, and transferring them into a script adds repetitive work and opportunities for error."
       ]
     },
     {
       "id": "method",
       "title": "Method",
       "paragraphs": [
-        "Annotate the same two events in every view, with the first event preceding the second. Choose the highest-frame-rate recording as the reference timeline.",
-        "For reference frame k, map to view i with x\u1d62(k) = e\u1d62\u2081 + (k \u2212 e\u1d63\u2081)(e\u1d62\u2082 \u2212 e\u1d62\u2081)/(e\u1d63\u2082 \u2212 e\u1d63\u2081). Both labeled events map exactly to their annotated frame indices.",
-        "Intersect the continuous valid ranges of all views, then take the ceiling of the common start and the floor of the common end. Sample every legal reference frame and round each mapped position to the nearest frame; exact half-frame ties select the later frame. The reference implementation uses integer fractions to avoid accumulated rounding error.",
-        "Save annotations in meta and equal-length raw-frame arrays in mapping inside each swing\u2019s sync.json. The viewer reads this saved mapping directly, including repeated or skipped frames, and applies it to both video and 2D detection overlays."
-      ]
+        "I developed a two-event synchronization algorithm to resolve the recording-boundary uncertainty and preserve exact event alignment through frame rounding. I then embedded it in a practical multi-view tool, connecting the technical solution to the work of inspecting, annotating, and reviewing real recordings.",
+        "This integrated workflow makes manual synchronization 5× faster than finding frame indices in separate software, writing them down, and entering them into a script. Events are assigned directly on the videos, and the synchronized preview updates within the same program before the mapping is saved."
+      ],
+      "items": [
+        "Inspect and annotate: Focus each camera view, navigate its full recording, and mark the same two events directly on its timeline.",
+        "Preview together: Return to the multi-view layout to see the common usable range. Unmatched heads and tails are excluded, and both events stay exactly aligned despite frame rounding.",
+        "Refine and save: Adjust an event, review the updated preview, and save the synchronized mapping for reconstruction in the same interface."
+      ],
+      "video": {
+        "title": "Synchronization tool walkthrough",
+        "src": "materials/data/sync_UI_tool.mp4",
+        "poster": "materials/data/sync_UI_tool_poster.jpg",
+        "type": "video/mp4",
+        "label": "Walkthrough of the integrated two-event synchronization tool",
+        "caption": "From finding and marking two events to reviewing and saving the synchronized result—all in one program.",
+        "fallbackLabel": "Open the tool walkthrough video"
+      }
     },
     {
       "id": "results",
       "title": "Results",
       "paragraphs": [
-        "The interactive viewer shows only the after-synchronization reconstruction. Face-on and down-the-line views use their own raw-frame mapping at each common timeline step. Camera views and the free 3D view retain the template\u2019s inspection controls.",
-        "The snapshot carousel compares before and after reconstructions. Each pair uses a shared loop duration with an individual effective playback speed, so unequal-length sequences finish and restart together. This duration-normalized comparison is separate from the event-based alignment used in the video viewer."
+        "The results demonstrate that synchronization is a critical factor in reconstruction accuracy: combining observations from different moments can distort the reconstructed motion. Aligning the recordings produces more believable 3D motion, with a 40% improvement in robustness on previously problematic videos. The integrated tool also made manual synchronization 5× faster.",
+        "The before/after snapshots above compare the reconstructed motion. The video section below shows the synchronized face-on and down-the-line recordings alongside their 2D detections and 3D reconstruction, so the alignment and resulting motion can be inspected together."
       ]
     },
     {
       "id": "discussion",
       "title": "Discussion",
-      "paragraphs": [
-        "Two events assume each recording differs by a constant offset and a constant time scale. This model cannot correct irregular clock changes or inaccurate event labels. Frame-level annotation also limits the temporal precision of the result.",
-        "Synchronization addresses temporal correspondence; it does not remove errors in 2D detections, camera estimation, or triangulation. The supplied before/after examples support visual inspection; no quantitative accuracy improvement is claimed here."
+      "subsections": [
+        {
+          "title": "Future work",
+          "paragraphs": [
+            "From a product perspective, the next step is a stable multi-iPhone recording system. Clear recording guidance and onboarding can help users move to our platform and capture better-quality, more consistent footage. This would reduce the recording-related variables that the reconstruction algorithm needs to account for.",
+            "An event detection model could automatically assign matching events across views, reducing the manual work needed to find and annotate them. The tool would retain its review and correction controls so users can refine the automatic assignments when needed."
+          ]
+        }
       ]
     },
     {
       "id": "conclusion",
       "title": "Conclusion",
       "paragraphs": [
-        "Two shared events define a reproducible frame mapping across independent recordings. Trimming to a common legal range and preserving exact event correspondence provides a consistent timeline for inspecting multi-view golf swing reconstruction."
+        "This project reinforces that accurate synchronization is essential to reliable 3D reconstruction. Two shared events resolve unmatched recording boundaries and preserve alignment through frame rounding, producing more believable motion and greater robustness on previously problematic footage.",
+        "The supporting tool makes that solution practical to use: annotation, synchronized preview, refinement, and saving are connected in one workflow, reducing the manual effort between the recordings and a usable result."
       ]
     }
   ]

@@ -114,10 +114,30 @@ async function renderPage() {
     }
     if(content.note) body.append(element('p',content.note,'section-note'));
     section.append(heading, body);
+    if (content.video) {
+      const demo = element('figure', undefined, 'tool-demo');
+      const demoHeading = element('h3', content.video.title);
+      demoHeading.id = `${content.id}-video-heading`;
+      const video = element('video');
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = 'metadata';
+      video.poster = content.video.poster || '';
+      video.setAttribute('aria-label', content.video.label);
+      const source = element('source');
+      source.src = content.video.src;
+      source.type = content.video.type;
+      const fallback = element('a', content.video.fallbackLabel);
+      fallback.href = content.video.src;
+      video.append(source, fallback);
+      demo.setAttribute('aria-labelledby', demoHeading.id);
+      demo.append(demoHeading, video, element('figcaption', content.video.caption));
+      section.append(demo);
+    }
     if (content.id === 'abstract') {
       const viewer = element('div', undefined, 'pose-snapshots');
       section.append(viewer);
-      import('./snapshot-3d.js').then(module => module.mountSnapshots(viewer)).catch(error => {
+      import('./snapshot-3d.js').then(module => module.mountSnapshots(viewer,{gestureHint:page.snapshotGestureHint})).catch(error => {
         console.error(error); viewer.textContent = 'Unable to load 3D snapshots.';
       });
     }

@@ -14,7 +14,9 @@ Open http://127.0.0.1:8007. The server prepares browser-compatible H.264 preview
 
 ## Materials
 
-- `materials/content.json`: all page copy, section order, navigation labels.
+- `materials/content.json`: all page copy, section order, navigation labels, and the Method tool-walkthrough video configuration.
+- `materials/data/sync_UI_tool.mp4`: compressed UI walkthrough shown after the Method workflow.
+- `materials/data/sync_UI_tool_poster.jpg`: still preview for the UI walkthrough.
 - `materials/data/snapshot.json`: snapshot swing selection, shared duration in seconds, and trail joints.
 - `materials/data/3d_results/before/<id>.json`: before reconstruction and calibration.
 - `materials/data/3d_results/after/<id>.json`: after reconstruction and calibration.
@@ -41,7 +43,9 @@ Each snapshot compares the complete before/after sequences using `duration` in s
 
 Both sequences play once over the same two seconds, hold their final frames for `stay` seconds (0.5 seconds here), then restart together, regardless of their frame counts. `stay` defaults to 0 when omitted and must be a nonnegative finite number. No FPS or start/end range is required; full ranges and effective playback rates are derived automatically. Duration must be a positive finite number. Playback pauses when the comparison is hidden. This is a duration-normalized visual comparison, separate from event synchronization.
 
-Snapshots use the original smooth fading recent-motion window. Shaft history includes every valid detected frame, skipping missing detections rather than sampling at fixed time intervals. The shared `duration` and final-frame `stay` still control both sequences together.
+Both snapshot panels default to their calibrated face-on camera, using one shared crop derived from the face-on 2D body detections. This provides common image-space framing rather than fitting each reconstruction independently. Default framing fits both complete ground squares with shared padding, preserving the original ground heights. The face-on cameras retreat together when needed to keep the squares in front of the cameras. Both panels share rotation, zoom, and pan: drag to rotate, right-drag to pan, and wheel/pinch to zoom; two-finger movement also pans. Snapshot rotation retains the original 0.01 radians-per-pixel sensitivity.
+
+Snapshots use a smooth fading window covering the most recent 80% of each sequence (2.4 seconds at a 3-second duration). Shaft history includes every valid detected frame, skipping missing detections rather than sampling at fixed time intervals. The shared `duration` and final-frame `stay` still control both sequences together.
 
 Saved sync files contain `meta: {view: {E1, E2}}` and `mapping: {view: [rawFrame, ...]}`. View names omit extensions. Both mappings must have equal length, legal nondecreasing integer indices, and aligned event positions. Source video timestamps and raw detections are indexed through these arrays; repeated and skipped frames are preserved.
 

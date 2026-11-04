@@ -413,9 +413,28 @@ header[data-expanded=false] { width: 0; padding-inline: 0; border: 0; }
 
 .video-name-list .video-item { min-height:44px;font:inherit; }
 
-/* Paired snapshots retain the template carousel and rendering controls. */
-.snapshot-comparison {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;width:100%;}
-.snapshot-comparison-panel {min-width:0;}
-.snapshot-comparison-panel > h4:first-child {text-align:center;font-size:14px;margin:12px 0;color:var(--muted,#596575);}
-.snapshot-comparison-panel canvas {width:100%;}
-@media(max-width:650px){.snapshot-comparison{grid-template-columns:1fr;}}
+/* Paired 3D snapshots use the reference card header and panel labels. */
+.pose-snapshots .pose-snapshot.snapshot-card {padding:0;}
+.pose-snapshots .snapshot-card-header {display:flex;justify-content:center;align-items:center;}
+.pose-snapshots .snapshot-card-header h4 {margin:0;text-align:center;font-size:16px;font-weight:500;}
+.pose-snapshots .snapshot-comparison {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto 1fr;gap:0 2px;width:100%;}
+.pose-snapshots .snapshot-comparison > .comparison-panel {display:grid;grid-row:span 2;grid-template-rows:subgrid;min-width:0;}
+.pose-snapshots .snapshot-comparison-panel canvas {width:100%;border-radius:0;}
+.pose-snapshots .snapshot-comparison .panel-heading {min-height:65px;}
+@media(max-width:600px){
+  .pose-snapshots .snapshot-comparison .panel-heading {padding:8px 4px;}
+  .pose-snapshots .snapshot-comparison .panel-heading strong {font-size:12px;}
+}
+
+.pose-snapshots .snapshot-gesture-hint {margin:12px auto 0;text-align:center;}
+
+.tool-demo { grid-column: 1 / -1; min-width: 0; margin: 0; }
+.tool-demo h3 { margin: 0 0 16px; font-size: 20px; font-weight: 500; }
+.tool-demo video { display: block; width: 100%; aspect-ratio: 1918 / 984; border: 1px solid var(--viewer-border); border-radius: 8px; background: #080c14; }
+.tool-demo figcaption { margin-top: 12px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+
+/* Match the related project pages: two outcome cards and readable Discussion prose. */
+#abstract .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.section-body > .content-subsection:first-child { margin-top: 0; }
+#discussion .content-subsection p { font-size: 17px; line-height: 1.8; margin: 17px 0; }
+#discussion .content-subsection p:last-child { margin-bottom: 0; }
