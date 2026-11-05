@@ -16,7 +16,9 @@ export async function mountSnapshots(root, { showCameras = false, gestureHint } 
   shell.setAttribute('role','region');shell.setAttribute('aria-roledescription','carousel');shell.setAttribute('aria-label','3D snapshot highlights');
   const wheel=document.createElement('div');wheel.className='snapshot-wheel';shell.append(wheel);
   const dots=document.createElement('div');dots.className='snapshot-dots';dots.setAttribute('aria-label','Choose a snapshot');
-  const cards=[],buttons=[];let index=0;
+  const cards=[],buttons=[];let index=0,snapshotLoad=0;
+  const snapshotStates=new Map();
+  let releaseSnapshot=()=>{};
   let position=0,target=0,animation;
   function layout(){
     // Absolute carousel cards do not contribute to their parent's height.
@@ -34,8 +36,10 @@ export async function mountSnapshots(root, { showCameras = false, gestureHint } 
     cards.forEach((card,i)=>{const p=placements[i];card.style.transform=`translateX(-50%) translate(${p.x}px, ${p.y}px) scale(${p.scale})`;card.style.zIndex=String(order.indexOf(i)+1);});
   }
   function select(next) {
+    releaseSnapshot();
     target=next;index=((target%cards.length)+cards.length)%cards.length;
     cards.forEach((card,i)=>{card.classList.toggle('is-current',i===index);card.inert=i!==index;card.setAttribute('aria-hidden',String(i!==index));buttons[i].setAttribute('aria-current',String(i===index));});
+    void loadSnapshot(index,++snapshotLoad);
     cancelAnimationFrame(animation);
     const from=position,started=performance.now(),duration=Math.min(900,300+Math.max(0,Math.abs(target-from)-1)*70);
     if(matchMedia('(prefers-reduced-motion: reduce)').matches){position=target;layout();return;}
@@ -62,44 +66,60 @@ export async function mountSnapshots(root, { showCameras = false, gestureHint } 
     const hint=document.createElement('p');hint.className='snapshot-hint snapshot-gesture-hint';hint.textContent=gestureHint;root.append(hint);
   }
   select(0);
-  await Promise.all(entries.map(async ([id,entry],i)=>{
+  async function loadSnapshot(i,load){
+    const [id,entry]=entries[i];
     try {
       const duration=entry.duration,stay=entry.stay??0;
       if(!Number.isFinite(duration)||duration<=0)throw new Error('Snapshot duration must be a positive number of seconds');
       if(!Number.isFinite(stay)||stay<0)throw new Error('Snapshot stay must be a nonnegative number of seconds');
+      cards[i].querySelector('.snapshot-comparison')?.remove();
       const pair=document.createElement('div');pair.className='snapshot-comparison';cards[i].append(pair);
       const records=await Promise.all(['before','after'].map(variant=>json(`materials/data/3d_results/${variant}/${encodeURIComponent(id)}.json`)));
       const framing=faceOnFraming(await json(`materials/data/2d_detections/${encodeURIComponent(id)}/face-on.json`));
+      if(load!==snapshotLoad)return;
       const counts=records.map(record=>record.reconstruction.length);
       if(counts.some(count=>!Number.isInteger(count)||count<1))throw new Error('Snapshot sequences must contain frames');
       const linkedControllers=[];
-      const shareInteraction=state=>linkedControllers.forEach(controller=>controller.setInteraction(state));
+      const shareInteraction=state=>{snapshotStates.set(id,{...snapshotStates.get(id),interaction:state});linkedControllers.forEach(controller=>controller.setInteraction(state));};
       const controllers=await Promise.all(['before','after'].map(async (variant,j)=>{
         const panel=document.createElement('div');panel.className='snapshot-comparison-panel comparison-panel';panel.dataset.model=variant==='after'?'golf':'general';pair.append(panel);
         const label=document.createElement('div');label.className='panel-heading';
         const text=document.createElement('strong');text.textContent=variant==='before'?'Before synchronization':'After synchronization';label.append(text);panel.append(label);
         return mountPoseScene(panel,id,{joints:entry.joints,range:[0,counts[j]-1],fps:counts[j]/duration},{showCameras,autoPlay:false,resultVariant:variant,detectionShaftHistory:true,showTitle:false,centerOnBody:true,faceOnCrop:framing,onInteraction:shareInteraction,poseColor:variant==='before'?'#ffce69':'#63f5b4'});
       }));
+      if(load!==snapshotLoad){controllers.forEach(controller=>controller.dispose());return;}
       // Fit the original ground squares in a shared default image crop.
       const retreat=Math.max(...controllers.map(controller=>controller.groundRetreat()));
       const bounds=controllers.map(controller=>controller.fitGround(retreat));
       const left=Math.min(...bounds.map(b=>b.left)),right=Math.max(...bounds.map(b=>b.right));
       const top=Math.min(...bounds.map(b=>b.top)),bottom=Math.max(...bounds.map(b=>b.bottom));
       Object.assign(framing,{x:(left+right)/2,y:(top+bottom)/2,width:(right-left)*1.12,height:(bottom-top)*1.12});
-      controllers.forEach(controller=>controller.setFrame(0));
+      const saved=snapshotStates.get(id);
+      let elapsed=saved?.elapsed??0,previous,animationHandle;
+      controllers.forEach((controller,j)=>{if(saved?.interaction)controller.setInteraction(saved.interaction);controller.setFrame(Math.min(counts[j]-1,Math.floor(elapsed/duration*counts[j])));});
       linkedControllers.push(...controllers);
-      let elapsed=0,previous;
       const observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;});let visible=false;observer.observe(cards[i]);
+      releaseSnapshot=()=>{
+        snapshotStates.set(id,{...snapshotStates.get(id),elapsed});
+        cancelAnimationFrame(animationHandle);observer.disconnect();
+        for(const [index,canvas] of [...pair.querySelectorAll('canvas')].entries()){
+          const poster=document.createElement('img');poster.className='snapshot-still';poster.alt=canvas.getAttribute('aria-label')||'Swing preview';
+          try{poster.src=controllers[index].capturePreview();canvas.replaceWith(poster);}catch{canvas.remove();}
+        }
+        controllers.forEach(controller=>controller.dispose());
+        releaseSnapshot=()=>{};
+      };
       function tick(now){
+        if(load!==snapshotLoad)return;
         if(!cards[i].isConnected){observer.disconnect();controllers.forEach(c=>c.dispose());return;}
         const active=visible&&!document.hidden&&!cards[i].inert;
         if(active&&previous!==undefined){elapsed=(elapsed+(now-previous)/1000)%(duration+stay);controllers.forEach((c,j)=>c.setFrame(Math.min(counts[j]-1,Math.floor(elapsed/duration*counts[j]))));}
-        previous=active?now:undefined;requestAnimationFrame(tick);
+        previous=active?now:undefined;animationHandle=requestAnimationFrame(tick);
       }
-      requestAnimationFrame(tick);
+      animationHandle=requestAnimationFrame(tick);
     }
-    catch(error){console.error(error);cards[i].textContent=`Swing ${id}: ${error.message}`;}
-  }));
+    catch(error){if(load===snapshotLoad){console.error(error);cards[i].textContent=`Swing ${id}: ${error.message}`;}}
+  }
 
 }
 export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, resultVariant = 'after', snapshotHistory = false, detectionShaftHistory = false, showTitle = true, centerOnBody = false, poseColor, faceOnCrop, onInteraction } = {}) {
@@ -710,6 +730,7 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
   let animationHandle,disposed=false,playbackEnabled=true;
   const groundCorners=()=>[-1,1].flatMap(x=>[-1,1].map(z=>new THREE.Vector3(floor.position.x+x*floorSize/2,floor.position.y-.0125,floor.position.z+z*floorSize/2)));
   const controller={
+    capturePreview(){draw();return canvas.toDataURL();},
     groundRetreat(){
       const preset=cameraPresets.get('face-on'),inverse=preset.rotation.clone().invert();
       return Math.max(0,...groundCorners().map(p=>p.sub(preset.position).applyQuaternion(inverse).z+Math.max(1,floorSize)));
@@ -762,7 +783,7 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
     },
     setPlaying(value){playbackEnabled=Boolean(value);},
     setFrame(value){frame=Math.max(start,Math.min(end,Math.floor(value)));draw();},
-    dispose(){cancelAnimationFrame(flightHandle);mediaCleanup.forEach(cleanup=>cleanup());disposed=true;cancelAnimationFrame(animationHandle);resizeObserver.disconnect();renderer.dispose();const geometries=new Set(),materials=new Set();scene.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material)materials.add(object.material);});geometries.forEach(g=>g.dispose());materials.forEach(m=>{m.map?.dispose();m.dispose();});},
+    dispose(){cancelAnimationFrame(flightHandle);mediaCleanup.forEach(cleanup=>cleanup());disposed=true;cancelAnimationFrame(animationHandle);resizeObserver.disconnect();renderer.dispose();if(detectionShaftHistory)renderer.forceContextLoss();const geometries=new Set(),materials=new Set();scene.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material)materials.add(object.material);});geometries.forEach(g=>g.dispose());materials.forEach(m=>{m.map?.dispose();m.dispose();});},
   };
   if(!autoPlay)return controller;
   // Loop the selected motion at its recorded frame rate. Only the current,

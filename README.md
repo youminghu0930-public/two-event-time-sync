@@ -72,3 +72,9 @@ Work on a feature branch, run tests and the static build, then review and commit
 ## Hero banner
 
 The title banner uses the reconstruction template’s face-on video and 3D composition. Configure `page.banner` in `materials/content.json` (`enabled`, `swing`, `label`, and playback `fps`). Club history includes every valid detected frame, skipping missing detections rather than sampling at fixed time intervals. It uses the after reconstruction and the selected swing’s saved sync mapping, loops over the mapped interval, and pauses when offscreen or when the page is hidden.
+
+## Playback recovery and template review
+
+Results uses the template’s existing Play control and message: “Video playback is unavailable. The 3D animation continues; tap Play to retry.” Play reloads failed or stalled video sources and attempts to unlock muted inline playback directly from the user gesture. Decoder waits are bounded so a failed video cannot freeze the 3D timeline. Exact saved frame mappings are retained.
+
+Only the active snapshot pair keeps live WebGL scenes. Visited cards retain a still preview; revisiting restores their playback position and shared navigation state. This limits mobile graphics resource use without changing the carousel controls. Base typography, navigation, camera buttons, distance slider, and playback controls follow the 3D reconstruction template. Paired snapshots, crown, synchronized mapping, gesture text, and the walkthrough are intentional additions. Physical iOS/Safari testing is still needed; automated checks and desktop browser tests do not establish real-device compatibility.

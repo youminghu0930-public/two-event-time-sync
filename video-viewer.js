@@ -1,3 +1,4 @@
+import {unlockVideo,waitForDecoders,VIDEO_RETRY_MESSAGE} from './video-recovery.js';
 import {createFrameSeeker} from './frame-seeker.js';
 import {installFrameKeys} from './frame-keys.js';
 import {mountPoseScene} from './snapshot-3d.js';
@@ -31,7 +32,7 @@ export async function mountVideos(root){
   const placeholder=make('div',undefined,'video-pose');placeholder.setAttribute('aria-busy','true');player.append(placeholder);
   const [catalog,credits]=await Promise.all([json('materials/data/videos.json'),json('materials/data/credits.json')]);
   let controller,media=[],version=0,frame=0,playing=false,raf,videoCallback,callbackVideo,selectionAbort,seekers=[],shortcutReady=false,shortcutStep,shortcutToggle;
-  let activeView='free-view';
+  let activeView='free-view',playbackVersion=0;
   const playerHeading=make('h4',undefined,'media-item-title'),content=make('div',undefined,'video-player-content');
   const viewOptions=make('div',undefined,'camera-view-options');viewOptions.setAttribute('role','group');viewOptions.setAttribute('aria-label','Camera view');
   const viewButtons=[];
@@ -43,7 +44,7 @@ export async function mountVideos(root){
   player.replaceChildren(playerHeading,viewOptions,content);
   const frameKeys=installFrameKeys({target:document,blurTarget:window,isReady:()=>shortcutReady,step:delta=>shortcutStep?.(delta),toggle:()=>shortcutToggle?.()});
   const buttons=[];
-  function stop(){playing=false;cancelAnimationFrame(raf);if(callbackVideo&&videoCallback!==undefined)callbackVideo.cancelVideoFrameCallback(videoCallback);videoCallback=undefined;media.forEach(video=>{video.pause();video.playbackRate=1;});}
+  function stop(){++playbackVersion;playing=false;cancelAnimationFrame(raf);if(callbackVideo&&videoCallback!==undefined)callbackVideo.cancelVideoFrameCallback(videoCallback);videoCallback=undefined;media.forEach(video=>{video.pause();video.playbackRate=1;});}
   let selectedId,refreshing=false;
   function renderList(){
     list.replaceChildren();buttons.length=0;
@@ -88,7 +89,7 @@ export async function mountVideos(root){
     const status=make('p','Loading reconstruction…','section-note');status.setAttribute('role','status');
     for(const view of clip.views){
       const panel=make('div');
-      const video=make('video');video.src=view.src;video.preload='auto';video.muted=true;video.playsInline=true;video.setAttribute('aria-hidden','true');video.tabIndex=-1;panel.append(video);views.append(panel);media.push(video);
+      const video=make('video');video.src=view.src;video.preload='auto';video.muted=video.defaultMuted=true;video.playsInline=true;video.setAttribute('muted','');video.setAttribute('playsinline','');video.setAttribute('aria-hidden','true');video.tabIndex=-1;panel.append(video);views.append(panel);media.push(video);
 
     }
     const controls=make('div',undefined,'playback-controls');
@@ -122,11 +123,15 @@ export async function mountVideos(root){
     }
     let readyController;
     const sources=[...media],startedAt=performance.now();
-    let reconstructionReady=false;
+    let reconstructionReady=false,retryNeeded=false;
+    const unlocking=new Set(),lastDecoded=sources.map(()=>startedAt);
     const updateStatus=()=>{
       if(request!==version)return;
       if(!reconstructionReady){status.textContent=performance.now()-startedAt>20000?'Still loading the 3D reconstruction… This is taking longer than usual.':'Loading reconstruction…';return;}
-      status.textContent=sources.some(video=>video.error)?'A source video could not be loaded. 3D controls remain available.':'';
+      const stalled=sources.some((video,i)=>video.readyState<2&&performance.now()-lastDecoded[i]>10000);
+      if(stalled||sources.some(video=>video.error))retryNeeded=true;
+      status.textContent=retryNeeded?VIDEO_RETRY_MESSAGE:'';
+      setPlaybackButton(play,playing&&!retryNeeded);
     };
     const statusTimer=setInterval(updateStatus,1000);
     signal.addEventListener('abort',()=>clearInterval(statusTimer),{once:true});
@@ -151,7 +156,7 @@ export async function mountVideos(root){
     seekers=media.map((video,i)=>createFrameSeeker(video,{
       getTimes:()=>times[i],onRequest:()=>{},
       onSettled:index=>{
-        settled[i]=index;
+        settled[i]=index;lastDecoded[i]=performance.now();
         if(request===version&&settled.every((value,i)=>value===rawFrame(i,requestedFrame))){
           updateStatus();
         }
@@ -170,26 +175,35 @@ export async function mountVideos(root){
       if(request!==version||video.readyState<2)return;
       video.pause();seekers[i].request(rawFrame(i,frame));
     }
-    sources.forEach((video,i)=>video.addEventListener('loadeddata',()=>startSource(video,i),{signal}));
+    sources.forEach((video,i)=>video.addEventListener('loadeddata',()=>{lastDecoded[i]=performance.now();if(!unlocking.has(video))startSource(video,i);},{signal}));
     // Decode the saved raw-frame selections rather than approximate the mapping
     // with native playback rates: repeats, skips, and event frames stay explicit.
-    async function tick(now){
-      if(!playing||request!==version)return;
+    async function tick(now,run=playbackVersion){
+      if(!playing||request!==version||run!==playbackVersion)return;
       const target=Math.min(clip.frames-1,Math.floor(clockFrame+(now-clockStart)*fps/1000));
       requestedFrame=target;
-      seekers.forEach((seeker,i)=>{if(sources[i].readyState>=2)seeker.request(rawFrame(i,target));});
-      await Promise.all(seekers.map(seeker=>seeker.whenIdle()));
-      if(!playing||request!==version)return;
+      seekers.forEach((seeker,i)=>{if(sources[i].readyState>=2&&!unlocking.has(sources[i]))seeker.request(rawFrame(i,target));});
+      const decoded=await waitForDecoders(seekers,{signal});
+      if(!playing||request!==version||run!==playbackVersion)return;
+      if(!decoded){retryNeeded=true;seekers.forEach(seeker=>seeker.reset());updateStatus();}
       showFrame(target,false);
       if(target>=clip.frames-1){pause();return;}
-      raf=requestAnimationFrame(tick);
+      raf=requestAnimationFrame(now=>tick(now,run));
     }
     const togglePlayback=()=>{
-      if(playing){pause();updateStatus();return;}
+      if(playing&&!retryNeeded){pause();updateStatus();return;}
       if(frame>=clip.frames-1)showFrame(0);
       seekers.forEach(seeker=>seeker.reset());
+      const run=++playbackVersion;
       playing=true;clockFrame=frame;clockStart=performance.now();setPlaybackButton(play,true);
-      sources.forEach(startSource);updateStatus();raf=requestAnimationFrame(tick);
+      // play() must run in the click gesture before awaiting any decoder work.
+      retryNeeded=false;
+      sources.forEach((video,i)=>{unlocking.add(video);unlockVideo(video,{
+        isCurrent:()=>request===version&&run===playbackVersion,
+        onReady:()=>{unlocking.delete(video);lastDecoded[i]=performance.now();startSource(video,i);updateStatus();},
+        onFailure:()=>{unlocking.delete(video);retryNeeded=true;updateStatus();}
+      });});
+      updateStatus();raf=requestAnimationFrame(now=>tick(now,run));
     };
     play.onclick=togglePlayback;
     start.onclick=()=>{pause();showFrame(0);};end.onclick=()=>{pause();showFrame(clip.frames-1);};
