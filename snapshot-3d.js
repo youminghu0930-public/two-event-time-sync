@@ -17,7 +17,12 @@ export async function mountSnapshots(root, { showCameras = false, gestureHint } 
   const wheel=document.createElement('div');wheel.className='snapshot-wheel';shell.append(wheel);
   const dots=document.createElement('div');dots.className='snapshot-dots';dots.setAttribute('aria-label','Choose a snapshot');
   const cards=[],buttons=[];let index=0,snapshotLoad=0;
-  const snapshotStates=new Map();
+  const snapshotStates=new Map(),snapshotTickets=entries.map(()=>0),assets=new Map();
+  let warming=false;
+  const readAsset=url=>{
+    if(!assets.has(url))assets.set(url,json(url).catch(error=>{assets.delete(url);throw error;}));
+    return assets.get(url);
+  };
   let releaseSnapshot=()=>{};
   let position=0,target=0,animation;
   function layout(){
@@ -52,6 +57,16 @@ export async function mountSnapshots(root, { showCameras = false, gestureHint } 
     card.setAttribute('aria-roledescription','slide');card.setAttribute('aria-label',`Swing ${id}`);
     const header=document.createElement('div');header.className='snapshot-card-header';
     const heading=document.createElement('h4');heading.textContent=`Swing ${id}`;header.append(heading);card.append(header);
+    const pair=document.createElement('div');pair.className='snapshot-comparison';
+    for(const variant of ['before','after']){
+      const panel=document.createElement('div');panel.className='snapshot-comparison-panel comparison-panel';panel.dataset.model=variant==='after'?'golf':'general';
+      const label=document.createElement('div');label.className='panel-heading';
+      const text=document.createElement('strong');text.textContent=variant==='before'?'Before synchronization':'After synchronization';label.append(text);
+      const viewport=document.createElement('div');viewport.className='snapshot-preview-window';viewport.setAttribute('aria-busy','true');
+      const placeholder=document.createElement('div');placeholder.className='snapshot-placeholder';placeholder.textContent='Loading preview…';placeholder.setAttribute('role','status');
+      viewport.append(placeholder);panel.append(label,viewport);pair.append(panel);
+    }
+    card.append(pair);
     wheel.append(card);cards.push(card);carouselResize.observe(card);
     const button=document.createElement('button');button.type='button';button.setAttribute('aria-label',`Show swing ${id}`);button.append(document.createElement('span'));
     const position=cards.length-1;button.onclick=()=>{let delta=(position-((target%cards.length)+cards.length)%cards.length+cards.length)%cards.length;if(delta>cards.length/2)delta-=cards.length;select(target+delta);};dots.append(button);buttons.push(button);
@@ -63,32 +78,52 @@ export async function mountSnapshots(root, { showCameras = false, gestureHint } 
   }
   root.append(shell,dots);
   if(gestureHint){
-    const hint=document.createElement('p');hint.className='snapshot-hint snapshot-gesture-hint';hint.textContent=gestureHint;root.append(hint);
+    const details=document.createElement('div');
+    for(const instruction of Array.isArray(gestureHint)?gestureHint:gestureHint.split(' · ')){
+      const hint=document.createElement('p');hint.className='keyboard-hint';hint.textContent=instruction;details.append(hint);
+    }
+    root.append(details);
   }
   select(0);
-  async function loadSnapshot(i,load){
-    const [id,entry]=entries[i];
+  async function warmPreviews(){
+    if(warming)return;
+    warming=true;
+    try{
+      for(let i=0;i<entries.length;i++){
+        if(!root.isConnected||document.hidden)break;
+        if(i!==index&&cards[i].dataset.previewReady!=='true')await loadSnapshot(i,0,true);
+      }
+    }finally{warming=false;}
+  }
+  async function loadSnapshot(i,load,previewOnly=false){
+    const [id,entry]=entries[i],ticket=++snapshotTickets[i];
+    const stale=()=>ticket!==snapshotTickets[i]||(previewOnly?i===index:load!==snapshotLoad);
+    const pair=cards[i].querySelector('.snapshot-comparison');
+    const viewports=[...pair.querySelectorAll('.snapshot-preview-window')];
+    const stages=[];let controllers=[];
+    const discard=()=>{controllers.forEach(controller=>controller.dispose());stages.forEach(stage=>stage.remove());};
     try {
       const duration=entry.duration,stay=entry.stay??0;
       if(!Number.isFinite(duration)||duration<=0)throw new Error('Snapshot duration must be a positive number of seconds');
       if(!Number.isFinite(stay)||stay<0)throw new Error('Snapshot stay must be a nonnegative number of seconds');
-      cards[i].querySelector('.snapshot-comparison')?.remove();
-      const pair=document.createElement('div');pair.className='snapshot-comparison';cards[i].append(pair);
-      const records=await Promise.all(['before','after'].map(variant=>json(`materials/data/3d_results/${variant}/${encodeURIComponent(id)}.json`)));
-      const framing=faceOnFraming(await json(`materials/data/2d_detections/${encodeURIComponent(id)}/face-on.json`));
-      if(load!==snapshotLoad)return;
-      const counts=records.map(record=>record.reconstruction.length);
+      viewports.forEach(viewport=>viewport.setAttribute('aria-busy','true'));
+      const [records,detections]=await Promise.all([
+        Promise.all(['before','after'].map(variant=>readAsset(`materials/data/3d_results/${variant}/${encodeURIComponent(id)}.json`))),
+        readAsset(`materials/data/2d_detections/${encodeURIComponent(id)}/face-on.json`)
+      ]);
+      if(stale())return;
+      const framing=faceOnFraming(detections),counts=records.map(record=>record.reconstruction.length);
       if(counts.some(count=>!Number.isInteger(count)||count<1))throw new Error('Snapshot sequences must contain frames');
       const linkedControllers=[];
       const shareInteraction=state=>{snapshotStates.set(id,{...snapshotStates.get(id),interaction:state});linkedControllers.forEach(controller=>controller.setInteraction(state));};
-      const controllers=await Promise.all(['before','after'].map(async (variant,j)=>{
-        const panel=document.createElement('div');panel.className='snapshot-comparison-panel comparison-panel';panel.dataset.model=variant==='after'?'golf':'general';pair.append(panel);
-        const label=document.createElement('div');label.className='panel-heading';
-        const text=document.createElement('strong');text.textContent=variant==='before'?'Before synchronization':'After synchronization';label.append(text);panel.append(label);
-        return mountPoseScene(panel,id,{joints:entry.joints,range:[0,counts[j]-1],fps:counts[j]/duration},{showCameras,autoPlay:false,resultVariant:variant,detectionShaftHistory:true,showTitle:false,centerOnBody:true,faceOnCrop:framing,onInteraction:shareInteraction,poseColor:variant==='before'?'#ffce69':'#63f5b4'});
+      const results=await Promise.allSettled(['before','after'].map((variant,j)=>{
+        const stage=document.createElement('div');stage.className='snapshot-scene-stage';stage.style.visibility='hidden';viewports[j].append(stage);stages.push(stage);
+        return mountPoseScene(stage,id,{joints:entry.joints,range:[0,counts[j]-1],fps:counts[j]/duration},{showCameras,autoPlay:false,resultVariant:variant,reconstructionData:records[j],detectionShaftHistory:true,showTitle:false,centerOnBody:true,faceOnCrop:framing,onInteraction:shareInteraction,poseColor:variant==='before'?'#ffce69':'#63f5b4'});
       }));
-      if(load!==snapshotLoad){controllers.forEach(controller=>controller.dispose());return;}
-      // Fit the original ground squares in a shared default image crop.
+      controllers=results.filter(result=>result.status==='fulfilled').map(result=>result.value);
+      const failed=results.find(result=>result.status==='rejected');
+      if(failed)throw failed.reason;
+      if(stale()){discard();return;}
       const retreat=Math.max(...controllers.map(controller=>controller.groundRetreat()));
       const bounds=controllers.map(controller=>controller.fitGround(retreat));
       const left=Math.min(...bounds.map(b=>b.left)),right=Math.max(...bounds.map(b=>b.right));
@@ -97,33 +132,51 @@ export async function mountSnapshots(root, { showCameras = false, gestureHint } 
       const saved=snapshotStates.get(id);
       let elapsed=saved?.elapsed??0,previous,animationHandle;
       controllers.forEach((controller,j)=>{if(saved?.interaction)controller.setInteraction(saved.interaction);controller.setFrame(Math.min(counts[j]-1,Math.floor(elapsed/duration*counts[j])));});
+      const savePosters=()=>{
+        // Capture both renders before replacing either viewport.
+        const posters=controllers.map((controller,j)=>{
+          const poster=document.createElement('img');poster.className='snapshot-still';poster.alt=`${j?'After':'Before'} synchronization · Swing ${id}`;poster.src=controller.capturePreview();return poster;
+        });
+        viewports.forEach((viewport,j)=>{viewport.replaceChildren(posters[j]);viewport.setAttribute('aria-busy','false');});
+        cards[i].dataset.previewReady='true';
+      };
+      if(previewOnly){savePosters();discard();return;}
+      // Reveal both panels together; preserve the previous still until ready.
+      viewports.forEach((viewport,j)=>{viewport.replaceChildren(stages[j]);stages[j].style.visibility='';viewport.setAttribute('aria-busy','false');});
+      cards[i].dataset.previewReady='true';
       linkedControllers.push(...controllers);
-      const observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;});let visible=false;observer.observe(cards[i]);
+      let visible=false;
+      const observer=new IntersectionObserver(items=>{visible=items[0].isIntersecting;});observer.observe(cards[i]);
       releaseSnapshot=()=>{
         snapshotStates.set(id,{...snapshotStates.get(id),elapsed});
         cancelAnimationFrame(animationHandle);observer.disconnect();
-        for(const [index,canvas] of [...pair.querySelectorAll('canvas')].entries()){
-          const poster=document.createElement('img');poster.className='snapshot-still';poster.alt=canvas.getAttribute('aria-label')||'Swing preview';
-          try{poster.src=controllers[index].capturePreview();canvas.replaceWith(poster);}catch{canvas.remove();}
-        }
-        controllers.forEach(controller=>controller.dispose());
-        releaseSnapshot=()=>{};
+        try{savePosters();}finally{discard();releaseSnapshot=()=>{};}
       };
       function tick(now){
-        if(load!==snapshotLoad)return;
-        if(!cards[i].isConnected){observer.disconnect();controllers.forEach(c=>c.dispose());return;}
+        if(stale())return;
+        if(!cards[i].isConnected){observer.disconnect();discard();return;}
         const active=visible&&!document.hidden&&!cards[i].inert;
-        if(active&&previous!==undefined){elapsed=(elapsed+(now-previous)/1000)%(duration+stay);controllers.forEach((c,j)=>c.setFrame(Math.min(counts[j]-1,Math.floor(elapsed/duration*counts[j]))));}
+        if(active&&previous!==undefined){elapsed=(elapsed+(now-previous)/1000)%(duration+stay);controllers.forEach((controller,j)=>controller.setFrame(Math.min(counts[j]-1,Math.floor(elapsed/duration*counts[j]))));}
         previous=active?now:undefined;animationHandle=requestAnimationFrame(tick);
       }
       animationHandle=requestAnimationFrame(tick);
+      void warmPreviews();
+    }catch(error){
+      discard();
+      if(!stale()){
+        console.error(error);
+        viewports.forEach(viewport=>{
+          viewport.setAttribute('aria-busy','false');
+          const placeholder=viewport.querySelector('.snapshot-placeholder');
+          if(placeholder)placeholder.textContent='Preview unavailable. Select this swing to retry.';
+        });
+      }
     }
-    catch(error){if(load===snapshotLoad){console.error(error);cards[i].textContent=`Swing ${id}: ${error.message}`;}}
   }
 
 }
-export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, resultVariant = 'after', snapshotHistory = false, detectionShaftHistory = false, showTitle = true, centerOnBody = false, poseColor, faceOnCrop, onInteraction } = {}) {
-  const {reconstruction: frames, calibration} = await json(`materials/data/3d_results/${resultVariant}/${encodeURIComponent(id)}.json`);
+export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, resultVariant = 'after', snapshotHistory = false, detectionShaftHistory = false, showTitle = true, centerOnBody = false, poseColor, faceOnCrop, onInteraction, reconstructionData } = {}) {
+  const {reconstruction: frames, calibration} = reconstructionData??await json(`materials/data/3d_results/${resultVariant}/${encodeURIComponent(id)}.json`);
   const configuredRange = entry.range ?? entry.ranage;
   const range = Array.isArray(configuredRange)
     ? configuredRange.map((value,index)=>value === null ? (index === 0 ? 0 : frames.length-1) : value)
@@ -589,7 +642,7 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
       camera.zoom=THREE.MathUtils.lerp(cameraFlight.zoom,camera.zoom,t);
       if(enablePan)camera.setViewOffset(w,h,THREE.MathUtils.lerp(cameraFlight.offsetX,-panX,t),THREE.MathUtils.lerp(cameraFlight.offsetY,-panY,t),w,h);
     }
-    if(!bannerMode&&!faceOnCrop)constrainCameraAboveGround(camera,minimumCameraY);
+    if(!bannerMode)constrainCameraAboveGround(camera,minimumCameraY);
     camera.updateProjectionMatrix();
     if(faceOnCrop&&selectedView==='face-on'){
       // Use the same pixel crop for both calibrated cameras. Intrinsics supply
