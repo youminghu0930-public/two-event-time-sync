@@ -540,3 +540,11 @@ header[data-expanded=false] { width: 0; padding-inline: 0; border: 0; }
 
 /* Preserve the visible retry message while matching the template's compact row. */
 .video-details > .player-status.is-retry {position:static;width:auto;height:auto;padding:0;overflow:visible;clip-path:none;white-space:normal;margin:12px 0 0;font-size:12px;line-height:1.6;color:var(--muted);}
+
+/* Mobile keeps the original stacked counter and full-size playback controls. */
+@media(max-width:650px){
+  .video-workspace .player-control-row {grid-template-columns:minmax(0,1fr);row-gap:16px;}
+  .video-workspace .player-control-row .player-meta {grid-column:1;grid-row:1;font-size:12px;line-height:1.6;}
+  .video-workspace .player-control-row .playback-controls {grid-column:1;grid-row:2;justify-content:center;flex-wrap:nowrap;gap:4px;}
+  .video-workspace .player-control-row .playback-controls button {width:44px;height:44px;flex:0 0 44px;}
+}
