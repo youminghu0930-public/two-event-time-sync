@@ -15,10 +15,12 @@ Base fonts, colors, navigation, section layout, camera selector, distance slider
 
 ## Validation and limits
 
-27 Node regression tests cover synchronization, seeking, frame keys, camera transitions, banner mapping, source retry, decoder timeout/cancellation, and snapshot ordering. Static build passes.
+28 Node regression tests cover synchronization, seeking, frame keys, camera transitions, banner mapping, source retry, decoder timeout/cancellation, and snapshot ordering. Static build passes.
 
 Desktop in-app browser checks exercised the retry presentation, continued 3D playback during video unavailability, frame stepping, carousel switching and remounting, two live snapshot canvases, and no horizontal document overflow at 1265px.
 
 Mobile review covered responsive CSS, inline/muted media attributes, touch gestures, touch targets, and graphics-resource lifetime. A phone viewport and physical iOS Safari were not available through the current browser controls. Successful decoder recovery and touch behavior on a real iPhone remain unverified; the tested fallback continues 3D playback and exposes Play to retry when sources remain unavailable.
 
 Carousel loading follow-up: all five cards measured 573px high with 460px preview windows in the desktop browser. Rear cards displayed cached stills, rapid selection preserved full card geometry, and only the active pair retained live snapshot canvases.
+
+Latest template update: both section headings use the shared instruction info icon; inline gesture paragraphs are removed. The frame counter and centered icons share a compact row, and the bordered navigator has a count badge and name-only entries. Browser checks confirmed zero top/bottom alignment difference, click/Space opening and Escape/outside-click dismissal. Recovery messages remain visible below the controls.

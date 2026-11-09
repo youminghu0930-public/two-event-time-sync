@@ -1,3 +1,4 @@
+import {createViewerInfo} from './viewer-info.js';
 import {faceOnFraming} from './snapshot-framing.js';
 import {parseSnapshotEntries} from './snapshot-config.js';
 import * as THREE from './vendor/three/three.module.js';
@@ -6,11 +7,16 @@ const names = ['nose','atlas','top_head','left_ear','right_ear','left_shoulder',
 const edges = [[0,1],[0,2],[0,3],[0,4],[5,6],[5,7],[7,9],[6,8],[8,10],[5,11],[6,12],[11,12],[11,13],[13,15],[12,14],[14,16],[17,19],[19,20]];
 const valid = p => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite);
 async function json(url) { const response = await fetch(url); if (!response.ok) throw new Error(`${url}: ${response.status}`); return response.json(); }
-export async function mountSnapshots(root, { showCameras = false, gestureHint } = {}) {
+export async function mountSnapshots(root, { showCameras = false } = {}) {
   const response=await fetch('materials/data/snapshot.json',{cache:'no-store'});
   if(!response.ok)throw new Error(`Snapshot configuration: ${response.status}`);
   const entries=parseSnapshotEntries(await response.text());
-  const title = document.createElement('h3'); title.textContent = '3D snapshot highlights'; title.className='result-subheading media-heading'; root.append(title);
+  const title = document.createElement('h3'); title.textContent = '3D snapshot highlights'; title.className='result-subheading media-heading viewer-section-heading';
+  title.append(createViewerInfo('snapshot-instructions','Snapshot controls',[
+    {gesture:'Left mouse drag / one-finger drag',action:'Rotate the view.'},
+    {gesture:'Right mouse drag / two-finger drag',action:'Pan the view.'},
+    {gesture:'Scroll / pinch',action:'Zoom in or out.'},
+  ],'section-info'));root.append(title);
   if(!entries.length)return;
   const shell=document.createElement('div');shell.className='snapshot-shell';
   shell.setAttribute('role','region');shell.setAttribute('aria-roledescription','carousel');shell.setAttribute('aria-label','3D snapshot highlights');
@@ -77,13 +83,6 @@ export async function mountSnapshots(root, { showCameras = false, gestureHint } 
     button.onclick=()=>select(target+step);button.hidden=entries.length<2;shell.append(button);
   }
   root.append(shell,dots);
-  if(gestureHint){
-    const details=document.createElement('div');
-    for(const instruction of Array.isArray(gestureHint)?gestureHint:gestureHint.split(' · ')){
-      const hint=document.createElement('p');hint.className='keyboard-hint';hint.textContent=instruction;details.append(hint);
-    }
-    root.append(details);
-  }
   select(0);
   async function warmPreviews(){
     if(warming)return;

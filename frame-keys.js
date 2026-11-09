@@ -9,6 +9,8 @@ export function installFrameKeys({ target, blurTarget, isReady, step, toggle }) 
   };
   const clear = () => { held.clear(); spaceHeld = false; };
   target.addEventListener('keydown', event => {
+    // Let the instruction popover keep its native button keyboard behavior.
+    if(event.target?.closest?.('.snapshot-info'))return;
     if (!['ArrowLeft', 'ArrowRight', ' '].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
     event.preventDefault(); event.stopImmediatePropagation();
     if (event.key === ' ') {

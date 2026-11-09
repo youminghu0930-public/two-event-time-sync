@@ -49,3 +49,13 @@ test('Space toggles once per press and prevents focused controls handling either
   keyboard(target, 'keydown', ' '); keyboard(target, 'keyup', ' ');
   assert.equal(toggles, 2); assert.equal(leaked, 0);
 });
+
+test('instruction info controls keep native Space activation without triggering playback',()=>{
+  const target=new EventTarget();target.closest=selector=>selector==='.snapshot-info'?target:null;
+  let toggles=0;
+  installFrameKeys({target,blurTarget:new EventTarget(),isReady:()=>true,toggle:()=>toggles++});
+  assert.equal(keyboard(target,'keydown',' ').defaultPrevented,false);
+  assert.equal(keyboard(target,'keyup',' ').defaultPrevented,false);
+  assert.equal(keyboard(target,'keydown','ArrowRight').defaultPrevented,false);
+  assert.equal(toggles,0);
+});

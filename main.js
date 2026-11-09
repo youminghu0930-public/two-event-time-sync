@@ -137,7 +137,7 @@ async function renderPage() {
     if (content.id === 'abstract') {
       const viewer = element('div', undefined, 'pose-snapshots');
       section.append(viewer);
-      import('./snapshot-3d.js').then(module => module.mountSnapshots(viewer,{gestureHint:page.snapshotGestureHint})).catch(error => {
+      import('./snapshot-3d.js').then(module => module.mountSnapshots(viewer)).catch(error => {
         console.error(error); viewer.textContent = 'Unable to load 3D snapshots.';
       });
     }
