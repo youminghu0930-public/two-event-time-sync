@@ -14,7 +14,7 @@ for(const [id,entry] of snapshots){
 }
 await fs.rm(new URL('dist/',root),{recursive:true,force:true});
 await fs.mkdir(new URL('dist/',root),{recursive:true});
-for(const file of ['index.html','styles.css','main.js','hero-banner.js','snapshot-3d.js','snapshot-config.js','snapshot-framing.js','camera-flight.js','frame-seeker.js','frame-keys.js','frame-timing.js','video-viewer.js','video-recovery.js','viewer-info.js','.nojekyll','vendor','materials/content.json','materials/data/credits.json','materials/data/snapshot.json','materials/data/videos.json','materials/data/3d_results']){
+for(const file of ['index.html','styles.css','main.js','hero-banner.js','snapshot-3d.js', 'vector-2d-overlay.js','snapshot-config.js','snapshot-framing.js','camera-flight.js','frame-seeker.js','frame-keys.js','frame-timing.js','video-viewer.js','video-recovery.js','viewer-info.js','.nojekyll','vendor','materials/content.json','materials/data/credits.json','materials/data/snapshot.json','materials/data/videos.json','materials/data/3d_results']){
  const target=new URL(`dist/${file}`,root);await fs.mkdir(new URL('./',target),{recursive:true});await fs.cp(new URL(file,root),target,{recursive:true});
 }
 for(const clip of catalog)for(const file of [clip.sync,...clip.views.flatMap(v=>[v.src,v.src+'.frames.json',`materials/data/2d_detections/${clip.id}/${v.name}.json`])]){

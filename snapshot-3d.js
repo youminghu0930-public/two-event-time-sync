@@ -1,3 +1,4 @@
+import {createVector2DOverlay} from './vector-2d-overlay.js';
 import {createViewerInfo} from './viewer-info.js';
 import {faceOnFraming} from './snapshot-framing.js';
 import {parseSnapshotEntries} from './snapshot-config.js';
@@ -174,7 +175,7 @@ export async function mountSnapshots(root, { showCameras = false } = {}) {
   }
 
 }
-export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, resultVariant = 'after', snapshotHistory = false, detectionShaftHistory = false, showTitle = true, centerOnBody = false, poseColor, faceOnCrop, onInteraction, reconstructionData } = {}) {
+export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, vector2D = false, bannerMode = false, resultVariant = 'after', snapshotHistory = false, detectionShaftHistory = false, showTitle = true, centerOnBody = false, poseColor, faceOnCrop, onInteraction, reconstructionData } = {}) {
   const {reconstruction: frames, calibration} = reconstructionData??await json(`materials/data/3d_results/${resultVariant}/${encodeURIComponent(id)}.json`);
   const configuredRange = entry.range ?? entry.ranage;
   const range = Array.isArray(configuredRange)
@@ -190,6 +191,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   const canvas = document.createElement('canvas'); canvas.setAttribute('aria-label', `Rotatable 3D pose for swing ${id}`); canvas.setAttribute('role','img');
   if(showTitle)card.append(heading);
   card.append(canvas);
+  const vectorOverlay=vector2D?createVector2DOverlay(canvas,{names,edges}):null;
   const points = frames.slice(start,end+1).flat().filter(valid);
   if (!points.length) throw new Error('No valid 3D points');
   const min = [0,1,2].map(axis => Math.min(...points.map(p=>p[axis])));
@@ -378,6 +380,7 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
   let presetYaw=0,presetPitch=0;
   const cameraObjects = new THREE.Group(); scene.add(cameraObjects);
   const mediaCleanup=[];
+  if(vectorOverlay)mediaCleanup.push(()=>vectorOverlay.dispose());
   // Tripods live outside cameraObjects so their grounded feet do not feed back
   // into the lowest-object calculation and keep lowering the ground.
   const tripods=[];
@@ -460,6 +463,9 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
     cameraPresets.set(view,{position:position.clone(),rotation:group.quaternion.clone(),K:cal.intrinsic,video:cameraVideos[view]});
     const raw=rawDetections[view];
     if(raw?.joints&&raw?.pred){
+      if(vectorOverlay){
+        rawOverlays.push({view,raw,mapping:names.map(name=>raw.joints.indexOf(name)),overlayColor:'#ffce69',K,depth,group});
+      }else{
       const mapping=names.map(name=>raw.joints.indexOf(name));
       const overlayColor='#ffce69';
       const boneMeshes=[];const rawBoneGeometry=new THREE.CylinderGeometry(1,1,1,8);const rawBoneMaterial=new THREE.MeshBasicMaterial({color:overlayColor,toneMapped:false,transparent:true,depthWrite:false});
@@ -478,6 +484,7 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
         group.add(overlay);
       }
       rawOverlays.push({raw,mapping,overlayColor,boneMeshes,dotMaterial,pointGeometry,K,depth,group});
+      }
     }
     const video=cameraVideos[view];
     if(video){
@@ -687,7 +694,8 @@ diffuseColor.a *= mix(0.1, 1.0, progress);`
         : .75*(1-age/historyWindow);
     }
     camera.updateMatrixWorld();
-    for(const overlay of rawOverlays){
+    if(vectorOverlay)vectorOverlay.render({camera,scene,overlays:rawOverlays,frame,w,h});
+    else for(const overlay of rawOverlays){
       // Measure actual projected image scale, including distance, zoom, FOV,
       // and orientation, instead of multiplying point size by zoom alone.
       overlay.group.updateWorldMatrix(true,false);

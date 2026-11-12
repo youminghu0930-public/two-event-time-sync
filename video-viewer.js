@@ -154,7 +154,7 @@ export async function mountVideos(root){
         return [view.name,{...raw,pred:sync.mapping[view.name].map(index=>raw.pred[index])}];
       })));
       if(request!==version)return;
-      readyController=await mountPoseScene(pose,clip.id,{range:[0,clip.frames-1],fps:clip.fps,joints:['golf_club_head']},{showCameras:true,autoPlay:false,rawDetections,cameraVideos:Object.fromEntries(clip.views.map((view,i)=>[view.name,media[i]]))});}
+      readyController=await mountPoseScene(pose,clip.id,{range:[0,clip.frames-1],fps:clip.fps,joints:['golf_club_head']},{showCameras:true,autoPlay:false,vector2D:true,rawDetections,cameraVideos:Object.fromEntries(clip.views.map((view,i)=>[view.name,media[i]]))});}
     catch(error){if(request===version){console.error(error);clearInterval(statusTimer);status.textContent='The reconstruction could not be loaded. Select another swing or reload to retry.';status.classList.add('is-retry');}return;}
     if(request!==version){readyController.dispose();return;}controller=readyController;reconstructionReady=true;controller.setView(activeView,{animate:false});
     distanceSlider.disabled=false;
